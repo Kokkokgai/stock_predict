@@ -24,10 +24,10 @@ from pathlib import Path
 
 # ── Local modules ──────────────────────────────────────────────────────────
 from data_loader import fetch_stock_data, get_company_info
-from indicators  import add_all_indicators
-from model       import EnsembleModel
-from predictor   import predict_latest, backtest
-from visualizer  import plot_price_indicators, plot_backtest, plot_feature_importance
+from indicators import add_all_indicators
+from model import EnsembleModel
+from predictor import predict_latest, backtest
+from visualizer import plot_price_indicators, plot_backtest, plot_feature_importance
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -36,54 +36,77 @@ from visualizer  import plot_price_indicators, plot_backtest, plot_feature_impor
 
 SIGNAL_EMOJI = {"BUY": "🟢 BUY", "SELL": "🔴 SELL", "HOLD": "🟡 HOLD"}
 
+
 def print_banner():
-    print("""
+    print(
+        """
 ╔══════════════════════════════════════════════════════════════╗
 ║         📈  STOCK PREDICTION SYSTEM  (ML-powered)           ║
 ║             XGBoost + Random Forest Ensemble                 ║
 ╚══════════════════════════════════════════════════════════════╝
-""")
+"""
+    )
+
 
 def print_prediction(result, info: dict):
     """Pretty-print the final prediction result."""
     bar_len = int(result.confidence * 20)
-    bar     = "█" * bar_len + "░" * (20 - bar_len)
+    conf_bar = "█" * bar_len + "░" * (20 - bar_len)
+    signal_lbl = {"BUY": "BUY  ▲", "SELL": "SELL ▼", "HOLD": "HOLD ~"}[result.signal]
+    signal_pfx = {"BUY": "[+]", "SELL": "[-]", "HOLD": "[~]"}[result.signal]
 
-    print(f"""
-┌─────────────────────────────────────────────────────────────┐
-│  Company   : {info['name'][:45]:<45}  │
-│  Ticker    : {result.ticker:<10}  Sector : {info['sector'][:24]:<24}  │
-│  As of     : {result.date}                                   │
-│  Last Close: ${result.last_close:<10.2f}                                 │
-├─────────────────────────────────────────────────────────────┤
-│  SIGNAL    : {SIGNAL_EMOJI[result.signal]:<51}  │
-│  P(UP)     : {result.probability:.1%}                                     │
-│  Confidence: [{bar}] {result.confidence:.0%}             │
-├─────────────────────────────────────────────────────────────┤
-│  WHAT THIS MEANS:                                           │""")
+    W = 63  # total inner width (between │ and │)
+
+    def row(label, value, width=W):
+        line = f"  {label:<12}: {value}"
+        return f"│{line:<{width}}│"
+
+    sep = "├" + "─" * W + "┤"
+    top = "┌" + "─" * W + "┐"
+    bot = "└" + "─" * W + "┘"
+
+    print()
+    print(top)
+    print(row("Company", info["name"][:48]))
+    print(row("Ticker", f"{result.ticker}   Sector: {info['sector'][:30]}"))
+    print(row("As of", result.date))
+    print(row("Last Close", f"${result.last_close:,.2f}"))
+    print(sep)
+    print(row("SIGNAL", f"{signal_pfx} {signal_lbl}"))
+    print(row("P(UP)", f"{result.probability:.1%}"))
+    print(row("Confidence", f"[{conf_bar}] {result.confidence:.0%}"))
+    print(sep)
+    print(f"│  {'WHAT THIS MEANS':<{W-2}}│")
 
     if result.signal == "BUY":
-        print(f"│  The model sees a {result.probability:.0%} probability the stock rises    │")
-        print( "│  tomorrow. Consider entering a long position.               │")
+        msg1 = f"  Model sees {result.probability:.0%} probability of upward move."
+        msg2 = "  Consider entering a long position."
     elif result.signal == "SELL":
-        print(f"│  The model sees only a {result.probability:.0%} probability of upward move. │")
-        print( "│  Consider reducing exposure or exiting a position.          │")
+        msg1 = f"  Model sees only {result.probability:.0%} probability of upward move."
+        msg2 = "  Consider reducing exposure or exiting a position."
     else:
-        print(f"│  Model is uncertain ({result.probability:.0%} P(UP)). Stay on the sidelines. │")
-        print( "│  Avoid entering new positions until a clearer signal.       │")
+        msg1 = f"  Model is uncertain ({result.probability:.0%} P(UP))."
+        msg2 = "  Wait for a clearer signal before entering."
 
-    print( "│                                                             │")
-    print( "│  ⚠ This is NOT financial advice. Always do your own        │")
-    print( "│    research before trading.                                 │")
-    print( "└─────────────────────────────────────────────────────────────┘")
+    print(f"│{msg1:<{W}}│")
+    print(f"│{msg2:<{W}}│")
+    print(f"│{'':>{W}}│")
+    print(f"│  {'WARNING: Not financial advice. Do your own research.':<{W-2}}│")
+    print(bot)
 
 
 # ══════════════════════════════════════════════════════════════════════════
 # Main pipeline
 # ══════════════════════════════════════════════════════════════════════════
 
-def run(ticker: str, period: str = "2y", forward_days: int = 1,
-        run_backtest: bool = True, threshold_pct: float = 0.3):
+
+def run(
+    ticker: str,
+    period: str = "2y",
+    forward_days: int = 1,
+    run_backtest: bool = True,
+    threshold_pct: float = 0.3,
+):
     """
     Execute the full pipeline for a given ticker.
 
@@ -140,21 +163,28 @@ def run(ticker: str, period: str = "2y", forward_days: int = 1,
 # CLI argument parsing
 # ══════════════════════════════════════════════════════════════════════════
 
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="ML-powered stock prediction system",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--ticker",      type=str,   default=None,
-                        help="Stock ticker, e.g. AAPL")
-    parser.add_argument("--period",      type=str,   default="2y",
-                        help="Data history: 1y, 2y, 5y ...")
-    parser.add_argument("--forward",     type=int,   default=1,
-                        help="Days ahead to predict")
-    parser.add_argument("--threshold",   type=float, default=0.3,
-                        help="Min %% move to label UP/DOWN (noise filter)")
-    parser.add_argument("--no-backtest", action="store_true",
-                        help="Skip backtesting step")
+    parser.add_argument(
+        "--ticker", type=str, default=None, help="Stock ticker, e.g. AAPL"
+    )
+    parser.add_argument(
+        "--period", type=str, default="2y", help="Data history: 1y, 2y, 5y ..."
+    )
+    parser.add_argument("--forward", type=int, default=1, help="Days ahead to predict")
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.0,
+        help="Min %% move to label UP/DOWN (0.0 = label every day)",
+    )
+    parser.add_argument(
+        "--no-backtest", action="store_true", help="Skip backtesting step"
+    )
     return parser.parse_args()
 
 
@@ -170,9 +200,9 @@ if __name__ == "__main__":
             ticker = "AAPL"
 
     run(
-        ticker       = ticker,
-        period       = args.period,
-        forward_days = args.forward,
-        run_backtest = not args.no_backtest,
-        threshold_pct= args.threshold,
+        ticker=ticker,
+        period=args.period,
+        forward_days=args.forward,
+        run_backtest=not args.no_backtest,
+        threshold_pct=args.threshold,
     )

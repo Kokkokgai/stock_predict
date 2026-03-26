@@ -170,6 +170,13 @@ def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df = add_obv(df)
     df = add_volume_ma(df)
     df = add_price_features(df)
+    # Scale-invariant ratio features (computed here so they exist before model.py adds them)
+    if "SMA_20" in df.columns:
+        df["Close_to_SMA20"] = df["Close"] / df["SMA_20"] - 1
+    if "EMA_12" in df.columns:
+        df["Close_to_EMA12"] = df["Close"] / df["EMA_12"] - 1
+    if "ATR" in df.columns:
+        df["ATR_Pct"] = df["ATR"] / df["Close"]
     df.dropna(inplace=True)
     print(f"[Indicators] Feature matrix: {df.shape[0]} rows × {df.shape[1]} columns")
     return df
